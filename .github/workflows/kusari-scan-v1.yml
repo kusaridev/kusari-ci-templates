@@ -79,12 +79,15 @@ jobs:
         run: apk add --no-cache git jq gnutar bzip2
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Fetch base branch
-        run: git fetch origin ${{ github.base_ref }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch origin "$BASE_REF"
 
       - name: Authenticate with Kusari
         run: kusari auth login --client-id="${{ secrets.KUSARI_CLIENT_ID }}" --client-secret="${{ secrets.KUSARI_CLIENT_SECRET }}"
@@ -93,12 +96,14 @@ jobs:
         id: scan
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          POST_COMMENT: ${{ inputs.post_comment }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           GITHUB_COMMENT_FLAG=""
-          if [ "${{ inputs.post_comment }}" = "true" ]; then
+          if [ "$POST_COMMENT" = "true" ]; then
             GITHUB_COMMENT_FLAG="--comment github"
           fi
-          kusari repo scan -w --output-format sarif $GITHUB_COMMENT_FLAG . origin/${{ github.base_ref }} > kusari_results.sarif
+          kusari repo scan -w --output-format sarif $GITHUB_COMMENT_FLAG . "origin/$BASE_REF" > kusari_results.sarif
 
       - name: Display scan results
         run: |
@@ -121,7 +126,7 @@ jobs:
           fi
 
       - name: Upload SARIF results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4.6.2
         if: always()
         with:
           name: kusari-sarif-results
