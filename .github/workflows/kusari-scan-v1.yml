@@ -48,7 +48,7 @@ on:
         description: 'Kusari CLI container image'
         required: false
         type: string
-        default: 'ghcr.io/kusaridev/kusari-cli@sha256:955262cae4d161f68cb623b273cb9a3d589004a2e7f661b15ff0d1697e494903'
+        default: 'ghcr.io/kusaridev/kusari-cli@sha256:e7a4f501e066ec2f3dfcda770882b975f48a162eef655bd54200529490932b04'
       fail_on_issues:
         description: 'Fail workflow if security issues are found'
         required: false
@@ -76,13 +76,16 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: apk add --no-cache git jq gnutar bzip2
+        run: apk add --no-cache git jq gnutar bzip2 libstdc++
 
       - name: Checkout code
         uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Fetch base branch
         env:
