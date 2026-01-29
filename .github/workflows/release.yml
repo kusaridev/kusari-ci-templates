@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update major version tag
+        run: |
+          # Get the tag that triggered this workflow
+          TAG=${GITHUB_REF#refs/tags/}
+
+          # Extract major version (v1 from v1.0.1)
+          MAJOR_VERSION=$(echo "$TAG" | grep -oE '^v[0-9]+')
+
+          if [ -z "$MAJOR_VERSION" ]; then
+            echo "Could not extract major version from tag: $TAG"
+            exit 1
+          fi
+
+          echo "Full tag: $TAG"
+          echo "Major version tag: $MAJOR_VERSION"
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Delete the major version tag locally if it exists
+          git tag -d "$MAJOR_VERSION" 2>/dev/null || true
+
+          # Create the major version tag pointing to current commit
+          git tag "$MAJOR_VERSION"
+
+          # Force push the major version tag
+          git push origin "$MAJOR_VERSION" --force
+
+          echo "Successfully updated $MAJOR_VERSION to point to $TAG"
