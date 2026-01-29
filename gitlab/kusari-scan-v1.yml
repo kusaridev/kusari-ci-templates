@@ -57,11 +57,11 @@ variables:
     - git fetch origin ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}
     - kusari auth login --client-id="${KUSARI_CLIENT_ID}" --client-secret="${KUSARI_CLIENT_SECRET}"
     # Run scan with GitLab comment posting (if enabled)
-    # The --gitlab-comment flag will post results directly to the MR if issues are found
+    # The --comment gitlab flag will post results directly to the MR if issues are found
     - |
       GITLAB_COMMENT_FLAG=""
       if [ "$KUSARI_POST_COMMENT" = "true" ]; then
-        GITLAB_COMMENT_FLAG="--gitlab-comment"
+        GITLAB_COMMENT_FLAG="--comment gitlab"
       fi
       kusari repo scan -w --output-format sarif $GITLAB_COMMENT_FLAG . origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} > kusari_results.sarif
     - |

@@ -1,0 +1,129 @@
+# Kusari GitHub Actions Reusable Workflow
+#
+# This workflow provides automated security scanning for pull requests using Kusari Inspector.
+# It automatically posts scan results as comments on pull requests when issues are found.
+#
+# USAGE:
+#   Create a workflow file in your repository (e.g., .github/workflows/kusari-scan.yml):
+#
+#   name: Kusari Security Scan
+#   on:
+#     pull_request:
+#       branches: [main, master]
+#
+#   jobs:
+#     kusari-scan:
+#       uses: kusaridev/kusari-ci-templates/.github/workflows/kusari-scan-v1.yml@v1
+#       permissions:
+#         contents: read
+#         pull-requests: write
+#       secrets:
+#         KUSARI_CLIENT_ID: ${{ secrets.KUSARI_CLIENT_ID }}
+#         KUSARI_CLIENT_SECRET: ${{ secrets.KUSARI_CLIENT_SECRET }}
+#       with:
+#         fail_on_issues: false
+#         post_comment: true
+#
+# REQUIRED SECRETS (set in GitHub repository/organization settings):
+#   - KUSARI_CLIENT_ID: Your Kusari client ID
+#   - KUSARI_CLIENT_SECRET: Your Kusari client secret
+#
+# REQUIRED PERMISSIONS:
+#   The calling workflow MUST specify these permissions:
+#     permissions:
+#       contents: read        # Required to checkout code
+#       pull-requests: write  # Required to post PR comments
+#
+# OPTIONAL INPUTS:
+#   - kusari_cli_image: Override the default Kusari CLI image
+#   - fail_on_issues: Set to true to fail workflow on security issues (default: false)
+#   - post_comment: Set to true to post results as PR comment (default: true)
+
+name: Kusari Security Scan
+
+on:
+  workflow_call:
+    inputs:
+      kusari_cli_image:
+        description: 'Kusari CLI container image'
+        required: false
+        type: string
+        default: 'ghcr.io/kusaridev/kusari-cli@sha256:955262cae4d161f68cb623b273cb9a3d589004a2e7f661b15ff0d1697e494903'
+      fail_on_issues:
+        description: 'Fail workflow if security issues are found'
+        required: false
+        type: boolean
+        default: false
+      post_comment:
+        description: 'Post scan results as PR comment'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      KUSARI_CLIENT_ID:
+        description: 'Kusari client ID'
+        required: true
+      KUSARI_CLIENT_SECRET:
+        description: 'Kusari client secret'
+        required: true
+
+jobs:
+  kusari-scan:
+    name: Kusari Security Scan
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ inputs.kusari_cli_image }}
+
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache git jq gnutar bzip2
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref }}
+
+      - name: Authenticate with Kusari
+        run: kusari auth login --client-id="${{ secrets.KUSARI_CLIENT_ID }}" --client-secret="${{ secrets.KUSARI_CLIENT_SECRET }}"
+
+      - name: Run Kusari scan
+        id: scan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          GITHUB_COMMENT_FLAG=""
+          if [ "${{ inputs.post_comment }}" = "true" ]; then
+            GITHUB_COMMENT_FLAG="--comment github"
+          fi
+          kusari repo scan -w --output-format sarif $GITHUB_COMMENT_FLAG . origin/${{ github.base_ref }} > kusari_results.sarif
+
+      - name: Display scan results
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "KUSARI SECURITY SCAN RESULTS"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          COMMENT_BODY=$(jq -r '.runs[0].results[0].message.markdown // "No results found"' kusari_results.sarif)
+          echo "$COMMENT_BODY"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      - name: Check for security issues
+        if: inputs.fail_on_issues
+        run: |
+          SHOULD_PROCEED=$(jq -r '.runs[0].results[0].properties.should_proceed // "true"' kusari_results.sarif)
+          if [ "$SHOULD_PROCEED" = "false" ]; then
+            echo "Security issues found - failing workflow"
+            exit 1
+          fi
+
+      - name: Upload SARIF results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kusari-sarif-results
+          path: kusari_results.sarif
+          retention-days: 30
