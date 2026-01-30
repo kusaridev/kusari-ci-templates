@@ -88,8 +88,9 @@ See [`.github/workflows/kusari-scan-v1.yml`](.github/workflows/kusari-scan-v1.ym
 To use these templates, you need Kusari Inspector credentials:
 
 1. Sign up at [https://us.kusari.cloud/signup](https://us.kusari.cloud/signup)
-2. Get your `KUSARI_CLIENT_ID` and `KUSARI_CLIENT_SECRET`
-3. Add them to your CI/CD platform's secrets/variables
+1. Go to API Keys and Create a New Key with all inspector permisions (inspector_bundle_scan, inspector_result_user_read, and inspector_result_workspace_read)
+1. Copy the ID and secret into your `KUSARI_CLIENT_ID` and `KUSARI_CLIENT_SECRET` respectively
+1. Add them to your CI/CD platform's secrets/variables
 
 ## Enterprise / Self-Hosted Setup
 
