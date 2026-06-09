@@ -93,7 +93,10 @@ jobs:
         run: git fetch origin "$BASE_REF"
 
       - name: Authenticate with Kusari
-        run: kusari auth login --client-id="${{ secrets.KUSARI_CLIENT_ID }}" --client-secret="${{ secrets.KUSARI_CLIENT_SECRET }}"
+        # run: kusari auth login --client-id="${{ secrets.KUSARI_CLIENT_ID }}" --client-secret="${{ secrets.KUSARI_CLIENT_SECRET }}"
+        run: kusari auth login --client-id="${{ secrets.KUSARI_CLIENT_ID }}" --client-secret="${{ secrets.KUSARI_CLIENT_SECRET }} -p https://auth.dev.kusari.cloud/ \
+            --console-url http://console.dev.kusari.cloud/ \
+            --platform-url https://platform.api.dev.kusari.cloud/"
 
       - name: Run Kusari scan
         id: scan
@@ -106,7 +109,9 @@ jobs:
           if [ "$POST_COMMENT" = "true" ]; then
             GITHUB_COMMENT_FLAG="--comment github"
           fi
-          kusari repo scan -w --output-format sarif $GITHUB_COMMENT_FLAG . "origin/$BASE_REF" > kusari_results.sarif
+          kusari repo scan -w --output-format sarif $GITHUB_COMMENT_FLAG . "origin/$BASE_REF" > kusari_results.sarif -p https://auth.dev.kusari.cloud/ \
+            --console-url http://console.dev.kusari.cloud/ \
+            --platform-url https://platform.api.dev.kusari.cloud/
 
       - name: Display scan results
         run: |
