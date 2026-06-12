@@ -48,7 +48,7 @@ on:
         description: 'Kusari CLI container image'
         required: false
         type: string
-        default: 'ghcr.io/kusaridev/kusari-cli@sha256:3756e5d00b86d3d32224d605b71378f0ac4417e68c5bf89d7be8c29c65cf493c'
+        default: 'ghcr.io/kusaridev/kusari-cli@sha256:b84eaedd75dbb14d9d7123e83244c50e75ef2fd073a151c449a0ffde9a09ab4a'
       fail_on_issues:
         description: 'Fail workflow if security issues are found'
         required: false
@@ -101,12 +101,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           POST_COMMENT: ${{ inputs.post_comment }}
           BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           GITHUB_COMMENT_FLAG=""
           if [ "$POST_COMMENT" = "true" ]; then
             GITHUB_COMMENT_FLAG="--comment github"
           fi
-          kusari repo scan -w --output-format sarif $GITHUB_COMMENT_FLAG . "origin/$BASE_REF" > kusari_results.sarif
+          # CI checks out a detached HEAD, so override the reported branch with the PR's source branch
+          kusari repo scan -w --output-format sarif --override-branch "$HEAD_REF" $GITHUB_COMMENT_FLAG . "origin/$BASE_REF" > kusari_results.sarif
 
       - name: Display scan results
         run: |
