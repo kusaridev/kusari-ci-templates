@@ -40,7 +40,7 @@
 #   - KUSARI_POST_COMMENT: Set to "true" to post results as MR comment (default: "true")
 
 variables:
-  KUSARI_CLI_IMAGE: "ghcr.io/kusaridev/kusari-cli@sha256:3756e5d00b86d3d32224d605b71378f0ac4417e68c5bf89d7be8c29c65cf493c"
+  KUSARI_CLI_IMAGE: "ghcr.io/kusaridev/kusari-cli@sha256:b84eaedd75dbb14d9d7123e83244c50e75ef2fd073a151c449a0ffde9a09ab4a"
   KUSARI_FAIL_ON_ISSUES: "false"
   KUSARI_POST_COMMENT: "true"
 
@@ -63,7 +63,8 @@ variables:
       if [ "$KUSARI_POST_COMMENT" = "true" ]; then
         GITLAB_COMMENT_FLAG="--comment gitlab"
       fi
-      kusari repo scan -w --output-format sarif $GITLAB_COMMENT_FLAG . origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} > kusari_results.sarif
+      # CI checks out a detached HEAD, so override the reported branch with the MR's source branch
+      kusari repo scan -w --output-format sarif --override-branch "${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}" $GITLAB_COMMENT_FLAG . origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} > kusari_results.sarif
     - |
       echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       echo "KUSARI SECURITY SCAN RESULTS"
