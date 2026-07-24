@@ -48,7 +48,7 @@ on:
         description: 'Kusari CLI container image'
         required: false
         type: string
-        default: 'ghcr.io/kusaridev/kusari-cli@sha256:ab88c5e7cca839b69d6bf2b7bebcbcc453e985e7fbdc8e0e9355ed6b8b6060fc'
+        default: 'ghcr.io/kusaridev/kusari-cli@sha256:24fc6fe5b80748a2bf964942efbd10a247a02a215eb15f9b0f65c7110e3debba'
       fail_on_issues:
         description: 'Fail workflow if security issues are found'
         required: false
