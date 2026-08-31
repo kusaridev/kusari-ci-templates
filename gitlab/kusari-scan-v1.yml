@@ -49,10 +49,42 @@ variables:
     name: ${KUSARI_CLI_IMAGE}
     entrypoint: [""]
   stage: test
+  # allow_failure is decided here, per rule, because the job-level keyword takes
+  # precedence over rules -- a hardcoded `allow_failure: true` on the job makes
+  # KUSARI_FAIL_ON_ISSUES unable to fail a pipeline no matter what the script
+  # returns. Setting it in rules is what lets the flag actually mean something.
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $KUSARI_FAIL_ON_ISSUES == "true"'
+      allow_failure: false
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      allow_failure: true
   before_script:
-    - apk add --no-cache git jq gnutar bzip2
+    # git (required by the CLI) and jq (used below) are installed here because
+    # the CLI image does not ship them.
+    #
+    # This verifies rather than assumes: the image is digest-pinned but apk
+    # serves a rolling repository, so a package can install cleanly and then fail
+    # on every call -- which is what happened when the repository's jq moved to a
+    # build needing GLIBC_2.44 while pinned images were frozen at glibc 2.43.
+    - |
+      need=""
+      git --version >/dev/null 2>&1 || need="$need git"
+      jq --version  >/dev/null 2>&1 || need="$need jq"
+      if [ -n "$need" ]; then
+        echo "Installing:$need"
+        apk add --no-cache $need
+      fi
+
+      # jq 1.8.1 links against glibc 2.43 and runs on images that predate the
+      # 2.44 rebuild. Newer images resolve a working jq above and skip this.
+      if ! jq --version >/dev/null 2>&1; then
+        echo "jq from the repository does not run in this image; falling back to jq 1.8.1"
+        apk add --no-cache "jq=1.8.1-r0"
+      fi
+
+      git --version >/dev/null 2>&1 || { echo "git is unusable in this image"; exit 1; }
+      jq  --version >/dev/null 2>&1 || { echo "jq is unusable in this image"; exit 1; }
+      echo "git $(git --version | awk '{print $3}') and $(jq --version) are usable"
   script:
     - git fetch origin ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}
     - kusari auth login --client-id="${KUSARI_CLIENT_ID}" --client-secret="${KUSARI_CLIENT_SECRET}"
@@ -70,16 +102,32 @@ variables:
       echo "KUSARI SECURITY SCAN RESULTS"
       echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       echo ""
-      COMMENT_BODY=$(jq -r '.runs[0].results[0].message.markdown // "No results found"' kusari_results.sarif)
-      SHOULD_PROCEED=$(jq -r '.runs[0].results[0].properties.should_proceed // "true"' kusari_results.sarif)
+      # No `//` default: it substitutes on null AND false, so it is only ever safe
+      # on a value that cannot be false. Using it uniformly is what hid the
+      # should_proceed bug in the gate below.
+      COMMENT_BODY=$(jq -r '.runs[0].results[0].message.markdown' kusari_results.sarif)
+      if [ -z "$COMMENT_BODY" ] || [ "$COMMENT_BODY" = "null" ]; then
+        COMMENT_BODY="No results found"
+      fi
       echo "$COMMENT_BODY"
       echo ""
       echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     - |
-      SHOULD_PROCEED=$(jq -r '.runs[0].results[0].properties.should_proceed // "true"' kusari_results.sarif)
-      if [ "$KUSARI_FAIL_ON_ISSUES" = "true" ] && [ "$SHOULD_PROCEED" = "false" ]; then
-        echo "Security issues found - failing pipeline"
-        exit 1
+      # should_proceed is a JSON boolean, and `// "true"` substitutes its default
+      # when the left side is null OR false -- so it returned "true" exactly when
+      # the value was false, and KUSARI_FAIL_ON_ISSUES could never fail a
+      # pipeline. Compare explicitly.
+      if [ "$KUSARI_FAIL_ON_ISSUES" = "true" ]; then
+        if [ ! -s kusari_results.sarif ]; then
+          echo "No SARIF results to evaluate - failing closed"
+          exit 1
+        fi
+        if jq -e '[.runs[]?.results[]?.properties.should_proceed]
+                  | any(. == false or . == "false")' kusari_results.sarif > /dev/null; then
+          echo "Security issues found - failing pipeline"
+          exit 1
+        fi
+        echo "No blocking issues found"
       fi
   artifacts:
     reports:
@@ -91,4 +139,5 @@ variables:
 
 kusari-repo-scan:
   extends: .kusari-scan
-  allow_failure: true
+  # No job-level allow_failure: it would override the rules above and silently
+  # restore the behaviour where KUSARI_FAIL_ON_ISSUES cannot fail a pipeline.
