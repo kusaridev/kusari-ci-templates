@@ -48,7 +48,7 @@ on:
         description: 'Kusari CLI container image'
         required: false
         type: string
-        default: 'ghcr.io/kusaridev/kusari-cli@sha256:541e1872cc3ba7fae9adb797d1865473e812b353c3521e2ebcae9cfe3444bf55'
+        default: 'ghcr.io/kusaridev/kusari-cli@sha256:71d611d1a98835aacbea26cafc26814094551d1fbbd31dea309df4fca4242487'
       fail_on_issues:
         description: 'Fail workflow if security issues are found'
         required: false
@@ -75,8 +75,40 @@ jobs:
       image: ${{ inputs.kusari_cli_image }}
 
     steps:
-      - name: Install dependencies
-        run: apk add --no-cache git jq gnutar bzip2 libstdc++
+      # git (required by the CLI) and jq (used below) are installed here because
+      # the CLI image does not ship them.
+      #
+      # This step verifies rather than assumes. The image is digest-pinned but
+      # apk serves a rolling repository, so a package can install cleanly and
+      # then fail on every invocation -- which is exactly what happened when the
+      # repository's jq moved to a build needing GLIBC_2.44 while pinned images
+      # were frozen at glibc 2.43:
+      #   jq: /usr/lib/libm.so.6: version `GLIBC_2.44' not found
+      #
+      # So: install what is missing, then prove it runs, and fall back to a build
+      # known to work on older images if it does not. A hard failure here beats a
+      # green pipeline whose scan output was never readable.
+      - name: Ensure dependencies
+        run: |
+          need=""
+          git --version >/dev/null 2>&1 || need="$need git"
+          jq --version  >/dev/null 2>&1 || need="$need jq"
+          if [ -n "$need" ]; then
+            echo "Installing:$need"
+            # shellcheck disable=SC2086
+            apk add --no-cache $need
+          fi
+
+          # jq 1.8.1 links against glibc 2.43 and runs on images that predate the
+          # 2.44 rebuild. Newer images resolve a working jq above and skip this.
+          if ! jq --version >/dev/null 2>&1; then
+            echo "jq from the repository does not run in this image; falling back to jq 1.8.1"
+            apk add --no-cache "jq=1.8.1-r0"
+          fi
+
+          git --version >/dev/null 2>&1 || { echo "::error::git is unusable in this image"; exit 1; }
+          jq  --version >/dev/null 2>&1 || { echo "::error::jq is unusable in this image"; exit 1; }
+          echo "git $(git --version | awk '{print $3}') and $(jq --version) are usable"
 
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -110,25 +142,44 @@ jobs:
           # CI checks out a detached HEAD, so override the reported branch with the PR's source branch
           kusari repo scan -w --output-format sarif --override-branch "$HEAD_REF" $GITHUB_COMMENT_FLAG . "origin/$BASE_REF" > kusari_results.sarif
 
+      # Rendering results is cosmetic, so it must never fail the job: the scan has
+      # already run and the verdict is checked in the next step. This step used to
+      # be able to kill a successful scan before the gate was ever reached.
       - name: Display scan results
+        continue-on-error: true
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "KUSARI SECURITY SCAN RESULTS"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
-          COMMENT_BODY=$(jq -r '.runs[0].results[0].message.markdown // "No results found"' kusari_results.sarif)
+          # No `//` default here. It substitutes on null AND false, so it is only
+          # safe on values that can never be false; using it uniformly is what hid
+          # the should_proceed bug below.
+          COMMENT_BODY=$(jq -r '.runs[0].results[0].message.markdown' kusari_results.sarif)
+          if [ -z "$COMMENT_BODY" ] || [ "$COMMENT_BODY" = "null" ]; then
+            COMMENT_BODY="No results found"
+          fi
           echo "$COMMENT_BODY"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+      # should_proceed is a JSON boolean. `// "true"` substitutes its default when
+      # the left side is null OR false, so it returned "true" precisely when the
+      # value was false -- fail_on_issues could never fail a workflow. Compare
+      # explicitly instead.
       - name: Check for security issues
         if: inputs.fail_on_issues
         run: |
-          SHOULD_PROCEED=$(jq -r '.runs[0].results[0].properties.should_proceed // "true"' kusari_results.sarif)
-          if [ "$SHOULD_PROCEED" = "false" ]; then
+          if [ ! -s kusari_results.sarif ]; then
+            echo "No SARIF results to evaluate - failing closed"
+            exit 1
+          fi
+          if jq -e '[.runs[]?.results[]?.properties.should_proceed]
+                    | any(. == false or . == "false")' kusari_results.sarif > /dev/null; then
             echo "Security issues found - failing workflow"
             exit 1
           fi
+          echo "No blocking issues found"
 
       - name: Upload SARIF results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4.6.2
