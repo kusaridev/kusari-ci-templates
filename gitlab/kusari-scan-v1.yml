@@ -40,7 +40,7 @@
 #   - KUSARI_POST_COMMENT: Set to "true" to post results as MR comment (default: "true")
 
 variables:
-  KUSARI_CLI_IMAGE: "ghcr.io/kusaridev/kusari-cli@sha256:965f355b116d577c2a590081c391e63b57aae426eb899e9b167c11ea6e48f05a"
+  KUSARI_CLI_IMAGE: "ghcr.io/kusaridev/kusari-cli@sha256:19b7a1aece36e146fc45ee058969d1ac0ef0df206a6cfbe094d62ac7ed818459"
   KUSARI_FAIL_ON_ISSUES: "false"
   KUSARI_POST_COMMENT: "true"
 
